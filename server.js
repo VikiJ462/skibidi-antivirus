@@ -11,11 +11,29 @@ app.use(express.static("public"));
 
 const VT_API_KEY = process.env.VT_API_KEY;
 
+// Přidáno pro lepší logování, pokud chybí API klíč
+if (!VT_API_KEY) {
+  console.error("💥 VT_API_KEY environment variable is not set!");
+  // Můžete se rozhodnout aplikaci ukončit nebo nepovolit API volání
+  // process.exit(1);
+}
+
 app.post("/api/scan", upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  // Přidáno pro logování přijatého souboru
+  console.log(`Received file: ${req.file.originalname}, size: ${req.file.size} bytes`);
+
+  if (!VT_API_KEY) {
+    return res.status(500).json({ error: "VirusTotal API key is not configured on the server." });
+  }
 
   try {
-    const response = await axios.post(
+    // Krok 1: Nahrání souboru na VirusTotal
+    console.log("Uploading file to VirusTotal...");
+    const uploadResponse = await axios.post(
       "https://www.virustotal.com/api/v3/files",
       req.file.buffer,
       {
@@ -26,23 +44,36 @@ app.post("/api/scan", upload.single("file"), async (req, res) => {
       }
     );
 
-    const analysisUrl = response.data.data.id;
+    const analysisId = uploadResponse.data.data.id;
+    console.log(`File uploaded. Analysis ID: ${analysisId}`);
 
-    // čekání na výsledky
+    // Krok 2: Čekání na výsledky analýzy
+    // Lepší přístup by byl polling, ale pro jednoduchost ponecháme setTimeout
+    console.log("Waiting for analysis results (6 seconds timeout)...");
     setTimeout(async () => {
-      const result = await axios.get(
-        `https://www.virustotal.com/api/v3/analyses/${analysisUrl}`,
-        {
-          headers: { "x-apikey": VT_API_KEY },
-        }
-      );
-
-      res.json(result.data);
+      try {
+        const resultResponse = await axios.get(
+          `https://www.virustotal.com/api/v3/analyses/${analysisId}`,
+          {
+            headers: { "x-apikey": VT_API_KEY },
+          }
+        );
+        console.log("Analysis results received.");
+        res.json(resultResponse.data);
+      } catch (err) {
+        console.error("Error fetching analysis results from VirusTotal:", err.response?.data || err.message);
+        res.status(500).json({ error: "Failed to retrieve scan results from VirusTotal." });
+      }
     }, 6000); // trochu počkáme na zpracování
 
   } catch (err) {
-    console.error(err.response?.data || err.message);
-    res.status(500).json({ error: "Scan failed" });
+    console.error("Error during file upload to VirusTotal or initial API call:", err.response?.data || err.message);
+    // Pokud je k dispozici detailnější chyba od VirusTotalu, pošleme ji klientovi
+    if (err.response && err.response.data && err.response.data.error && err.response.data.error.message) {
+      res.status(err.response.status || 500).json({ error: `VirusTotal API error: ${err.response.data.error.message}` });
+    } else {
+      res.status(500).json({ error: "Scan failed due to an unexpected server error." });
+    }
   }
 });
 

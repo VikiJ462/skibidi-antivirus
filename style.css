@@ -1,0 +1,32 @@
+body {
+  font-family: Comic Sans MS, cursive, sans-serif;
+  background: radial-gradient(circle, #ff69b4, #4b0082);
+  color: white;
+  text-align: center;
+  padding: 2em;
+}
+
+.container {
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2em;
+  border-radius: 1em;
+  box-shadow: 0 0 20px yellow;
+}
+
+#scan-btn {
+  padding: 1em;
+  font-size: 1.2em;
+  background: limegreen;
+  color: black;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+#results {
+  margin-top: 2em;
+  font-size: 1.1em;
+  background: black;
+  padding: 1em;
+  border-radius: 1em;
+}

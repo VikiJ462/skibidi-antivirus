@@ -34,19 +34,17 @@ app.post("/api/scan", upload.single("file"), async (req, res) => {
     console.log("Uploading file to VirusTotal...");
 
     // Vytvoříme nový FormData objekt pro odeslání souboru na VirusTotal
-    const form = new FormData(); // <-- NOVINKA
+    const form = new FormData();
     // Přidáme soubor k FormData s názvem pole "file"
-    form.append('file', req.file.buffer, { filename: req.file.originalname }); // <-- NOVINKA
+    form.append('file', req.file.buffer, { filename: req.file.originalname });
 
     const uploadResponse = await axios.post(
       "https://www.virustotal.com/api/v3/files",
-      form, // <-- ZMĚNA: posíláme FormData objekt
+      form, // ZMĚNA: posíláme FormData objekt
       {
         headers: {
-          ...form.getHeaders(), // <-- ZMĚNA: Důležité pro nastavení 'Content-Type: multipart/form-data' s boundary
+          ...form.getHeaders(), // ZMĚNA: Důležité pro nastavení 'Content-Type: multipart/form-data' s boundary
           "x-apikey": VT_API_KEY,
-          // 'Content-Type' už není 'application/octet-stream', ale 'multipart/form-data' s boundary,
-          // které zajistí `form.getHeaders()`
         },
       }
     );
@@ -54,23 +52,49 @@ app.post("/api/scan", upload.single("file"), async (req, res) => {
     const analysisId = uploadResponse.data.data.id;
     console.log(`File uploaded. Analysis ID: ${analysisId}`);
 
-    // Krok 2: Čekání na výsledky analýzy
-    console.log("Waiting for analysis results (6 seconds timeout)...");
-    setTimeout(async () => {
-      try {
-        const resultResponse = await axios.get(
-          `https://www.virustotal.com/api/v3/analyses/${analysisId}`,
-          {
-            headers: { "x-apikey": VT_API_KEY },
-          }
-        );
-        console.log("Analysis results received.");
-        res.json(resultResponse.data);
-      } catch (err) {
-        console.error("Error fetching analysis results from VirusTotal:", err.response?.data || err.message);
-        res.status(500).json({ error: "Failed to retrieve scan results from VirusTotal." });
+    // NOVINKA: Funkce pro polling
+    const pollForResults = async (id, attempt = 0) => {
+      const maxAttempts = 10; // Maximální počet pokusů
+      const delay = 3000;     // Zpoždění mezi pokusy (3 sekundy)
+
+      if (attempt >= maxAttempts) {
+        console.error(`Max polling attempts reached for analysis ID: ${id}`);
+        throw new Error("Analysis results not available in time.");
       }
-    }, 6000);
+
+      console.log(`Polling for analysis results for ID: ${id}, attempt: ${attempt + 1}`);
+      const resultResponse = await axios.get(
+        `https://www.virustotal.com/api/v3/analyses/${id}`,
+        {
+          headers: { "x-apikey": VT_API_KEY },
+        }
+      );
+
+      const status = resultResponse.data.data.attributes.status;
+      console.log(`Analysis status: ${status}`);
+
+      if (status === 'completed') {
+        console.log("Analysis completed.");
+        return resultResponse.data;
+      } else if (status === 'queued' || status === 'running') {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return pollForResults(id, attempt + 1); // Opakuj dotaz
+      } else {
+        // Jiný stav, např. 'failed'
+        console.error(`Analysis failed with status: ${status}`);
+        throw new Error(`VirusTotal analysis status: ${status}`);
+      }
+    };
+
+    try {
+      // ZMĚNA: Volání polling funkce místo setTimeout
+      const finalResult = await pollForResults(analysisId);
+      console.log("Final analysis results received.");
+      res.json(finalResult);
+    } catch (err) {
+      console.error("Error during polling for results:", err.message);
+      res.status(500).json({ error: err.message });
+    }
 
   } catch (err) {
     console.error("Error during file upload to VirusTotal or initial API call:", err.response?.data || err.message);

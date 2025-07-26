@@ -27,11 +27,12 @@ document.getElementById("scan-btn").addEventListener("click", async () => {
     }
 
     const malicious = data.data.attributes.stats.malicious;
-    const harmless = data.data.attributes.stats.harmless;
+    const harmless = data.data.attributes.stats.harmless; // <-- Tato proměnná už tam byla
 
     if (malicious > 0) {
       results.innerHTML = `☠️ ${malicious} antiviruses say: THIS FILE SUS 💀`;
     } else {
+      // Změna zde: zahrnuje proměnnou harmless
       results.innerHTML = `🧼 giga clean: ${harmless} antiviruses say YES 🔥`;
     }
 
